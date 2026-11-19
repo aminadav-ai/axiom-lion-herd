@@ -1,0 +1,984 @@
+// ============================================================================
+// AXIOM LION HERD (2.5D Isometric "Lion & Sheep")
+// Written 100% in Axiom (Telos Z3 Contracts + Flux Logic + Strata Framebuffer)
+// Compiles directly to standalone W3C WebAssembly (.wasm) with ZERO rustc!
+// ============================================================================
+
+// --- Layer 1: Axiom.Telos Mathematically Verified Pure Kernels (Z3 SMT) ---
+
+fn clamp_arena(v: i64) -> i64
+  ens result >= 36 && result <= 988
+{
+  if v < 36 {
+    36
+  } else {
+    if v > 988 { 988 } else { v }
+  }
+}
+
+fn clamp_corral_x(v: i64) -> i64
+  ens result >= 732 && result <= 936
+{
+  if v < 732 {
+    732
+  } else {
+    if v > 936 { 936 } else { v }
+  }
+}
+
+fn clamp_corral_y(v: i64) -> i64
+  ens result >= 134 && result <= 346
+{
+  if v < 134 {
+    134
+  } else {
+    if v > 346 { 346 } else { v }
+  }
+}
+
+fn clamp_byte(v: i64) -> i64
+  ens result >= 0 && result <= 255
+{
+  if v < 0 {
+    0
+  } else {
+    if v > 255 { 255 } else { v }
+  }
+}
+
+fn clamp_vel(v: i64, limit: i64) -> i64
+  req limit >= 0
+  ens result >= -limit && result <= limit
+{
+  if v < -limit {
+    -limit
+  } else {
+    if v > limit { limit } else { v }
+  }
+}
+
+fn abs_val(v: i64) -> i64
+  ens result >= 0
+{
+  if v < 0 { -v } else { v }
+}
+
+fn iso_screen_x(wx: i64, wy: i64) -> i64
+  req wx >= 0 && wx <= 1024 && wy >= 0 && wy <= 1024
+  ens result >= 64 && result <= 576
+{
+  320 + (wx - wy) / 4
+}
+
+fn iso_screen_y(wx: i64, wy: i64) -> i64
+  req wx >= 0 && wx <= 1024 && wy >= 0 && wy <= 1024
+  ens result >= 92 && result <= 348
+{
+  92 + (wx + wy) / 8
+}
+
+fn sheep_slot_addr(idx: i64) -> i64
+  req idx >= 0 && idx < 14
+  ens result >= 64 && result <= 168
+{
+  64 + idx * 8
+}
+
+fn snapshot_slot_addr(slot: i64) -> i64
+  req slot >= 0 && slot < 240
+  ens result >= 512 && result < 20000
+{
+  512 + slot * 80
+}
+
+fn compute_herd_score(penned: i64, speed_bonus: i64) -> i64
+  req penned >= 0 && penned <= 14 && speed_bonus >= 0 && speed_bonus <= 2000
+  ens result >= 0 && result <= 4800
+{
+  penned * 200 + speed_bonus
+}
+
+fn pack_rgba(r: i64, g: i64, b: i64) -> i64 {
+  let cr = clamp_byte(r);
+  let cg = clamp_byte(g);
+  let cb = clamp_byte(b);
+  (255 << 24) | (cb << 16) | (cg << 8) | cr
+}
+
+// --- Layer 3: Axiom.Strata Linear Memory Helpers & PRNG ---
+// Memory Map (32-bit word indices):
+//   0: tick            1: lion_x          2: lion_y          3: lion_vx
+//   4: lion_vy         5: stamina         6: roar_timer      7: penned_count
+//   8: score           9: rng_state      10: win_tick       11: snap_head
+//  12: snap_count     13: lion_hop
+//  64..175: 14 sheep * 8 words (x, y, vx, vy, penned, hop, tint, pad)
+//  256..287: depth sort order & keys (15 entities)
+//  512..19711: Time-Travel Ring Buffer (240 snapshots * 80 words)
+//  32768..288767: 640x400 RGBA Framebuffer (byte offset = 131072)
+
+fn next_rand() -[Mem]-> i64 {
+  let s = mem_load(9);
+  let next = (s * 1103515245 + 12345) & 0x7FFFFFFF;
+  let safe = if next == 0 { 9876543 } else { next };
+  mem_store(9, safe);
+  safe
+}
+
+fn save_snapshot() -[Mem]-> unit {
+  let head = mem_load(11);
+  let safe_slot = if head < 0 {
+    0
+  } else {
+    if head >= 240 { 0 } else { head }
+  };
+  let base = snapshot_slot_addr(safe_slot);
+
+  let mut h = 0;
+  while h >= 0 && h < 14 max 14 {
+    mem_store(base + h, mem_load(h));
+    h = h + 1;
+  }
+
+  let mut s = 0;
+  while s >= 0 && s < 14 max 14 {
+    let saddr = sheep_slot_addr(s);
+    let daddr = base + 14 + s * 4;
+    let packed_pos = ((mem_load(saddr) & 2047) << 12) | (mem_load(saddr + 1) & 2047);
+    let packed_vel = ((mem_load(saddr + 2) + 64) << 8) | ((mem_load(saddr + 3) + 64) & 255);
+    let meta = ((mem_load(saddr + 4) & 3) << 12) | ((mem_load(saddr + 5) & 63) << 4) | (mem_load(saddr + 6) & 7);
+    mem_store(daddr, packed_pos);
+    mem_store(daddr + 1, packed_vel);
+    mem_store(daddr + 2, meta);
+    s = s + 1;
+  }
+
+  let next_head = if safe_slot + 1 >= 240 { 0 } else { safe_slot + 1 };
+  mem_store(11, next_head);
+  let cnt = mem_load(12);
+  if cnt < 240 {
+    mem_store(12, cnt + 1);
+    ()
+  } else {
+    ()
+  }
+}
+
+export fn init_game(seed: i64) -[Mem]-> i64 {
+  let clean_seed = if seed <= 0 { 424242 } else { seed & 0x7FFFFFFF };
+  mem_store(0, 0);
+  mem_store(1, 220);
+  mem_store(2, 780);
+  mem_store(3, 0);
+  mem_store(4, 0);
+  mem_store(5, 100);
+  mem_store(6, 0);
+  mem_store(7, 0);
+  mem_store(8, 0);
+  mem_store(9, clean_seed);
+  mem_store(10, 0);
+  mem_store(11, 0);
+  mem_store(12, 0);
+  mem_store(13, 0);
+
+  let mut i = 0;
+  while i >= 0 && i < 14 max 14 {
+    let addr = sheep_slot_addr(i);
+    let rx = next_rand();
+    let ry = next_rand();
+    let sx = clamp_arena(180 + (rx & 511));
+    let sy = clamp_arena(320 + (ry & 511));
+    mem_store(addr, sx);
+    mem_store(addr + 1, sy);
+    mem_store(addr + 2, ((rx >> 9) & 3) - 1);
+    mem_store(addr + 3, ((ry >> 9) & 3) - 1);
+    mem_store(addr + 4, 0);
+    mem_store(addr + 5, (i * 5) & 31);
+    mem_store(addr + 6, i - (i / 3) * 3);
+    mem_store(addr + 7, 0);
+    i = i + 1;
+  }
+
+  save_snapshot();
+  render_frame()
+}
+
+// --- Boids Flock Simulation + Shepherd Corral Physics ---
+
+fn step_sheep_flock(lion_x: i64, lion_y: i64, roaring: i64) -[Mem]-> i64 {
+  let scare_radius = if roaring > 0 { 360 } else { 225 };
+  let scare_sq = scare_radius * scare_radius;
+  let mut penned_total = 0;
+
+  let mut i = 0;
+  while i >= 0 && i < 14 max 14 {
+    let addr = sheep_slot_addr(i);
+    let sx = mem_load(addr);
+    let sy = mem_load(addr + 1);
+    let svx = mem_load(addr + 2);
+    let svy = mem_load(addr + 3);
+    let state = mem_load(addr + 4);
+    let hop = mem_load(addr + 5);
+
+    if state == 1 {
+      // Happily grazing inside the wooden shepherd corral!
+      let jitter = next_rand();
+      let jx = if (jitter & 31) == 0 { ((jitter >> 5) & 3) - 1 } else { 0 };
+      let jy = if (jitter & 31) == 7 { ((jitter >> 8) & 3) - 1 } else { 0 };
+      let nvx = clamp_vel(svx + jx, 2);
+      let nvy = clamp_vel(svy + jy, 2);
+      let nx = clamp_corral_x(sx + nvx);
+      let ny = clamp_corral_y(sy + nvy);
+      let bvx = if nx == 732 || nx == 936 { -nvx } else { nvx };
+      let bvy = if ny == 134 || ny == 346 { -nvy } else { nvy };
+      mem_store(addr, nx);
+      mem_store(addr + 1, ny);
+      mem_store(addr + 2, bvx);
+      mem_store(addr + 3, bvy);
+      mem_store(addr + 5, (hop + 1) & 31);
+      penned_total = penned_total + 1;
+    } else {
+      // Boids: Separation + Cohesion + Alignment + Flee from Lion!
+      let mut sep_x = 0;
+      let mut sep_y = 0;
+      let mut coh_x = 0;
+      let mut coh_y = 0;
+      let mut ali_x = 0;
+      let mut ali_y = 0;
+      let mut neighbors = 0;
+
+      let mut j = 0;
+      while j >= 0 && j < 14 max 14 {
+        if j != i {
+          let oaddr = sheep_slot_addr(j);
+          if mem_load(oaddr + 4) == 0 {
+            let ox = mem_load(oaddr);
+            let oy = mem_load(oaddr + 1);
+            let dx = sx - ox;
+            let dy = sy - oy;
+            let adx = abs_val(dx);
+            let ady = abs_val(dy);
+            if adx < 150 && ady < 150 {
+              coh_x = coh_x + ox;
+              coh_y = coh_y + oy;
+              ali_x = ali_x + mem_load(oaddr + 2);
+              ali_y = ali_y + mem_load(oaddr + 3);
+              neighbors = neighbors + 1;
+              if adx < 46 && ady < 46 {
+                sep_x = sep_x + dx;
+                sep_y = sep_y + dy;
+              } else {
+                ()
+              };
+            } else {
+              ()
+            };
+          } else {
+            ()
+          };
+        } else {
+          ()
+        };
+        j = j + 1;
+      }
+
+      let mut ax = sep_x / 10;
+      let mut ay = sep_y / 10;
+
+      if neighbors > 0 {
+        let cx = coh_x / neighbors;
+        let cy = coh_y / neighbors;
+        ax = ax + (cx - sx) / 48 + (ali_x / neighbors) / 4;
+        ay = ay + (cy - sy) / 48 + (ali_y / neighbors) / 4;
+      } else {
+        ()
+      };
+
+      // Lion flee vector
+      let ldx = sx - lion_x;
+      let ldy = sy - lion_y;
+      let dist_sq = ldx * ldx + ldy * ldy;
+      let mut max_spd = 4;
+      if dist_sq < scare_sq {
+        max_spd = if roaring > 0 { 13 } else { 9 };
+        let push = if roaring > 0 { 12 } else { 8 };
+        let approx_d = abs_val(ldx) + abs_val(ldy) + 12;
+        if approx_d > 0 {
+          ax = ax + (ldx * push) / approx_d;
+          ay = ay + (ldy * push) / approx_d;
+        } else {
+          ()
+        };
+      } else {
+        // Gentle meadow grazing wander
+        let r = next_rand();
+        if (r & 15) == 0 {
+          ax = ax + ((r >> 4) & 3) - 1;
+          ay = ay + ((r >> 7) & 3) - 1;
+        } else {
+          ()
+        };
+      };
+
+      // Subtle attraction into the open corral gate when already right in front of the gate!
+      if sx >= 590 && sx <= 735 && sy >= 165 && sy <= 315 {
+        ax = ax + 4;
+        ay = ay + (240 - sy) / 20;
+      } else {
+        ()
+      };
+
+      let damped_vx = (svx * 7) / 8 + ax;
+      let damped_vy = (svy * 7) / 8 + ay;
+      let mut nvx = clamp_vel(damped_vx, max_spd);
+      let mut nvy = clamp_vel(damped_vy, max_spd);
+      let mut nx = clamp_arena(sx + nvx);
+      let mut ny = clamp_arena(sy + nvy);
+
+      // Arena edge soft bounce so sheep don't glue to walls
+      if nx <= 44 { nvx = abs_val(nvx) + 2; } else { () };
+      if nx >= 980 { nvx = -abs_val(nvx) - 2; } else { () };
+      if ny <= 44 { nvy = abs_val(nvy) + 2; } else { () };
+      if ny >= 980 { nvy = -abs_val(nvy) - 2; } else { () };
+
+      // Exterior corral fence collision (corral: x in 700..960, y in 110..370; gate at x=700, y in 165..315)
+      let in_gate_y = ny >= 165 && ny <= 315;
+      if sx < 700 && nx >= 694 && ny >= 104 && ny <= 376 && !in_gate_y {
+        nx = 693;
+        nvx = -abs_val(nvx);
+      } else {
+        ()
+      };
+      if sy < 110 && ny >= 104 && nx >= 694 && nx <= 966 {
+        ny = 103;
+        nvy = -abs_val(nvy);
+      } else {
+        ()
+      };
+      if sy > 370 && ny <= 376 && nx >= 694 && nx <= 966 {
+        ny = 377;
+        nvy = abs_val(nvy);
+      } else {
+        ()
+      };
+
+      // Check if sheep crossed inside the corral!
+      if nx >= 722 && nx <= 956 && ny >= 122 && ny <= 358 {
+        mem_store(addr, clamp_corral_x(nx));
+        mem_store(addr + 1, clamp_corral_y(ny));
+        mem_store(addr + 2, 2);
+        mem_store(addr + 3, 0);
+        mem_store(addr + 4, 1);
+        mem_store(addr + 5, 8);
+        penned_total = penned_total + 1;
+      } else {
+        let spd = abs_val(nvx) + abs_val(nvy);
+        let hop_step = if spd > 6 { 3 } else { if spd > 1 { 2 } else { 0 } };
+        mem_store(addr, nx);
+        mem_store(addr + 1, ny);
+        mem_store(addr + 2, nvx);
+        mem_store(addr + 3, nvy);
+        mem_store(addr + 5, (hop + hop_step) & 31);
+      };
+    };
+
+    i = i + 1;
+  }
+
+  penned_total
+}
+
+export fn step_game(
+  dx_in: i64,
+  dy_in: i64,
+  roar_in: i64,
+  ptr_active: i64,
+  ptr_sx: i64,
+  ptr_sy: i64
+) -[Mem]-> i64 {
+  let tick = mem_load(0) + 1;
+  mem_store(0, tick);
+
+  let lx = mem_load(1);
+  let ly = mem_load(2);
+  let mut lvx = mem_load(3);
+  let mut lvy = mem_load(4);
+  let mut stamina = mem_load(5);
+  let mut roar_timer = mem_load(6);
+
+  // Trigger Lion Roar / Sprint Burst!
+  if roar_in > 0 && stamina >= 28 && roar_timer == 0 {
+    roar_timer = 22;
+    stamina = stamina - 28;
+  } else {
+    if roar_timer > 0 {
+      roar_timer = roar_timer - 1;
+    } else {
+      if stamina < 100 && (tick & 1) == 0 {
+        stamina = stamina + 1;
+      } else {
+        ()
+      };
+    };
+  };
+
+  let lion_max = if roar_timer > 10 { 15 } else { 10 };
+
+  // Convert screen-space directional input (`dx_in`, `dy_in`) into isometric world axes!
+  // Screen right (+dx) => +wx, -wy ; Screen down (+dy) => +wx, +wy
+  let mut wish_wx = 0;
+  let mut wish_wy = 0;
+  if dx_in != 0 || dy_in != 0 {
+    wish_wx = (dy_in + dx_in) * 4;
+    wish_wy = (dy_in - dx_in) * 4;
+  } else {
+    if ptr_active > 0 {
+      let target_wx = (ptr_sy - 92) * 4 + (ptr_sx - 320) * 2;
+      let target_wy = (ptr_sy - 92) * 4 - (ptr_sx - 320) * 2;
+      let pdx = target_wx - lx;
+      let pdy = target_wy - ly;
+      if abs_val(pdx) > 14 || abs_val(pdy) > 14 {
+        wish_wx = clamp_vel(pdx / 6, 6);
+        wish_wy = clamp_vel(pdy / 6, 6);
+      } else {
+        ()
+      };
+    } else {
+      ()
+    };
+  };
+
+  lvx = clamp_vel((lvx * 3) / 4 + wish_wx, lion_max);
+  lvy = clamp_vel((lvy * 3) / 4 + wish_wy, lion_max);
+
+  let mut nlx = clamp_arena(lx + lvx);
+  let mut nly = clamp_arena(ly + lvy);
+
+  // Keep the Lion outside the sheep corral so the lion doesn't trample penned sheep
+  if nlx >= 688 && nlx <= 968 && nly >= 102 && nly <= 378 {
+    if lx < 688 {
+      nlx = 687;
+    } else {
+      if ly < 102 { nly = 101; } else { if ly > 378 { nly = 379; } else { nlx = 687; } };
+    };
+  } else {
+    ()
+  };
+
+  let lspd = abs_val(lvx) + abs_val(lvy);
+  let lhop = if lspd > 2 { (mem_load(13) + 3) & 31 } else { 0 };
+
+  mem_store(1, nlx);
+  mem_store(2, nly);
+  mem_store(3, lvx);
+  mem_store(4, lvy);
+  mem_store(5, stamina);
+  mem_store(6, roar_timer);
+  mem_store(13, lhop);
+
+  let penned = step_sheep_flock(nlx, nly, roar_timer);
+  let safe_penned = if penned < 0 { 0 } else { if penned > 14 { 14 } else { penned } };
+  mem_store(7, safe_penned);
+
+  if safe_penned == 14 && mem_load(10) == 0 {
+    mem_store(10, tick);
+  } else {
+    ()
+  };
+
+  let ref_tick = if mem_load(10) > 0 { mem_load(10) } else { tick };
+  let raw_bonus = 2000 - ref_tick / 2;
+  let speed_bonus = if safe_penned == 0 {
+    0
+  } else {
+    if raw_bonus < 0 { 0 } else { if raw_bonus > 2000 { 2000 } else { raw_bonus } }
+  };
+  let verified_score = compute_herd_score(safe_penned, speed_bonus);
+  mem_store(8, verified_score);
+
+  if (tick & 3) == 0 {
+    save_snapshot();
+  } else {
+    ()
+  };
+
+  render_frame()
+}
+
+// --- Time-Travel Rewind (Instant State Scrubbing in Linear Memory) ---
+
+export fn rewind_to_snapshot(steps_back: i64) -[Mem]-> i64 {
+  let cnt = mem_load(12);
+  if cnt <= 0 {
+    render_frame()
+  } else {
+    let clamped_back = if steps_back < 0 {
+      0
+    } else {
+      if steps_back >= cnt { cnt - 1 } else { steps_back }
+    };
+    let head = mem_load(11);
+    let raw_idx = head - 1 - clamped_back;
+    let wrapped = if raw_idx < 0 { raw_idx + 240 } else { raw_idx };
+    let safe_slot = if wrapped < 0 { 0 } else { if wrapped >= 240 { 0 } else { wrapped } };
+    let base = snapshot_slot_addr(safe_slot);
+
+    let mut h = 0;
+    while h >= 0 && h < 11 max 11 {
+      mem_store(h, mem_load(base + h));
+      h = h + 1;
+    }
+    mem_store(13, mem_load(base + 13));
+
+    let mut s = 0;
+    while s >= 0 && s < 14 max 14 {
+      let saddr = sheep_slot_addr(s);
+      let daddr = base + 14 + s * 4;
+      let ppos = mem_load(daddr);
+      let pvel = mem_load(daddr + 1);
+      let meta = mem_load(daddr + 2);
+      mem_store(saddr, (ppos >> 12) & 2047);
+      mem_store(saddr + 1, ppos & 2047);
+      mem_store(saddr + 2, ((pvel >> 8) & 255) - 64);
+      mem_store(saddr + 3, (pvel & 255) - 64);
+      mem_store(saddr + 4, (meta >> 12) & 3);
+      mem_store(saddr + 5, (meta >> 4) & 63);
+      mem_store(saddr + 6, meta & 7);
+      s = s + 1;
+    }
+
+    render_frame()
+  }
+}
+
+// --- 2.5D Isometric Software Rasterizer (640x400 RGBA in Strata Memory) ---
+
+fn darken_pixel(px_idx: i64) -[Mem]-> unit {
+  let cur = mem_load(px_idx);
+  let r = ((cur & 255) * 5) >> 3;
+  let g = (((cur >> 8) & 255) * 5) >> 3;
+  let b = (((cur >> 16) & 255) * 5) >> 3;
+  mem_store(px_idx, (255 << 24) | (b << 16) | (g << 8) | r);
+  ()
+}
+
+fn draw_shadow_ellipse(cx: i64, cy: i64, rx: i64, ry: i64) -[Mem]-> unit {
+  if rx > 0 && ry > 0 {
+    let r2 = rx * rx * ry * ry;
+    let mut dy = -ry;
+    while dy <= ry max 36 {
+      let py = cy + dy;
+      if py >= 0 && py < 400 {
+        let mut dx = -rx;
+        while dx <= rx max 48 {
+          let px = cx + dx;
+          if px >= 0 && px < 640 {
+            if dx * dx * ry * ry + dy * dy * rx * rx <= r2 {
+              darken_pixel(32768 + py * 640 + px);
+            } else {
+              ()
+            };
+          } else {
+            ()
+          };
+          dx = dx + 1;
+        }
+      } else {
+        ()
+      };
+      dy = dy + 1;
+    }
+  } else {
+    ()
+  }
+}
+
+fn draw_shaded_sphere(
+  cx: i64,
+  cy: i64,
+  rad: i64,
+  base_r: i64,
+  base_g: i64,
+  base_b: i64
+) -[Mem]-> unit {
+  if rad > 0 {
+    let r2 = rad * rad;
+    let mut dy = -rad;
+    while dy <= rad max 44 {
+      let py = cy + dy;
+      if py >= 0 && py < 400 {
+        let mut dx = -rad;
+        while dx <= rad max 44 {
+          let px = cx + dx;
+          if px >= 0 && px < 640 {
+            let d2 = dx * dx + dy * dy;
+            if d2 <= r2 {
+              // Directional sunlight from upper-left (-dx, -dy) + crisp rim outline
+              let rim = if d2 >= r2 - rad * 2 + 1 { 1 } else { 0 };
+              if rim == 1 {
+                let rr = (base_r * 3) >> 2;
+                let rg = (base_g * 3) >> 2;
+                let rb = (base_b * 3) >> 2;
+                mem_store(32768 + py * 640 + px, pack_rgba(rr, rg, rb));
+              } else {
+                let light = 112 - (dx * 36 + dy * 44) / rad;
+                let spec_dx = dx + rad / 3;
+                let spec_dy = dy + rad / 3;
+                let spec = if spec_dx * spec_dx + spec_dy * spec_dy <= (rad * rad) / 9 { 34 } else { 0 };
+                let r = (base_r * light) / 100 + spec;
+                let g = (base_g * light) / 100 + spec;
+                let b = (base_b * light) / 100 + spec;
+                mem_store(32768 + py * 640 + px, pack_rgba(r, g, b));
+              };
+            } else {
+              ()
+            };
+          } else {
+            ()
+          };
+          dx = dx + 1;
+        }
+      } else {
+        ()
+      };
+      dy = dy + 1;
+    }
+  } else {
+    ()
+  }
+}
+
+fn draw_fence_post(wx: i64, wy: i64, height_px: i64) -[Mem]-> unit {
+  let clamped_wx = if wx < 0 { 0 } else { if wx > 1024 { 1024 } else { wx } };
+  let clamped_wy = if wy < 0 { 0 } else { if wy > 1024 { 1024 } else { wy } };
+  let sx = iso_screen_x(clamped_wx, clamped_wy);
+  let sy = iso_screen_y(clamped_wx, clamped_wy);
+
+  draw_shadow_ellipse(sx + 3, sy + 1, 5, 3);
+  let mut h = 0;
+  while h < height_px max 24 {
+    let py = sy - h;
+    if py >= 0 && py < 400 {
+      let mut dx = -2;
+      while dx <= 2 max 8 {
+        let px = sx + dx;
+        if px >= 0 && px < 640 {
+          let shade = if dx < 0 { 168 } else { if dx == 0 { 142 } else { 108 } };
+          let cap = if h >= height_px - 2 { 28 } else { 0 };
+          mem_store(
+            32768 + py * 640 + px,
+            pack_rgba(shade + cap, (shade * 2) / 3 + cap, shade / 3 + cap / 2)
+          );
+        } else {
+          ()
+        };
+        dx = dx + 1;
+      }
+    } else {
+      ()
+    };
+    h = h + 1;
+  }
+}
+
+fn draw_sheep_25d(idx: i64) -[Mem]-> unit {
+  if idx >= 0 && idx < 14 {
+    let addr = sheep_slot_addr(idx);
+    let raw_x = mem_load(addr);
+    let raw_y = mem_load(addr + 1);
+    let wx = if raw_x < 0 { 0 } else { if raw_x > 1024 { 1024 } else { raw_x } };
+    let wy = if raw_y < 0 { 0 } else { if raw_y > 1024 { 1024 } else { raw_y } };
+    let vx = mem_load(addr + 2);
+    let vy = mem_load(addr + 3);
+    let penned = mem_load(addr + 4);
+    let hop = mem_load(addr + 5) & 15;
+    let tint = mem_load(addr + 6);
+
+    let sx = iso_screen_x(wx, wy);
+    let sy = iso_screen_y(wx, wy);
+    let bounce_z = if hop < 8 { hop / 2 } else { (16 - hop) / 2 };
+
+    // Ground shadow stays planted on grass while fluffy wool body hops in Z!
+    draw_shadow_ellipse(sx, sy + 2, 10 - bounce_z / 2, 5);
+
+    // Little dark legs
+    let leg_y = sy - bounce_z / 2;
+    if leg_y >= 0 && leg_y < 399 && sx >= 5 && sx < 635 {
+      let leg_col = pack_rgba(58, 44, 38);
+      mem_store(32768 + leg_y * 640 + (sx - 4), leg_col);
+      mem_store(32768 + (leg_y - 1) * 640 + (sx - 4), leg_col);
+      mem_store(32768 + leg_y * 640 + (sx + 4), leg_col);
+      mem_store(32768 + (leg_y - 1) * 640 + (sx + 4), leg_col);
+    } else {
+      ()
+    };
+
+    let wool_r = if penned == 1 { 252 } else { if tint == 0 { 246 } else { if tint == 1 { 238 } else { 228 } } };
+    let wool_g = if penned == 1 { 246 } else { if tint == 0 { 244 } else { if tint == 1 { 233 } else { 230 } } };
+    let wool_b = if penned == 1 { 210 } else { if tint == 0 { 236 } else { if tint == 1 { 218 } else { 226 } } };
+
+    // Fluffy multi-puff wool silhouette + head facing movement direction
+    let body_y = sy - 6 - bounce_z;
+    draw_shaded_sphere(sx - 3, body_y + 1, 6, wool_r, wool_g, wool_b);
+    draw_shaded_sphere(sx + 3, body_y + 1, 6, wool_r, wool_g, wool_b);
+    draw_shaded_sphere(sx, body_y - 1, 8, wool_r, wool_g, wool_b);
+
+    let fdx = clamp_vel(vx - vy, 6);
+    let fdy = clamp_vel((vx + vy) / 2, 4);
+    let head_x = sx + (fdx * 5) / 6;
+    let head_y = body_y - 2 + fdy / 2;
+    draw_shaded_sphere(head_x, head_y, 4, 72, 56, 48);
+  } else {
+    ()
+  }
+}
+
+fn draw_lion_25d() -[Mem]-> unit {
+  let raw_x = mem_load(1);
+  let raw_y = mem_load(2);
+  let wx = if raw_x < 0 { 0 } else { if raw_x > 1024 { 1024 } else { raw_x } };
+  let wy = if raw_y < 0 { 0 } else { if raw_y > 1024 { 1024 } else { raw_y } };
+  let vx = mem_load(3);
+  let vy = mem_load(4);
+  let hop = mem_load(13) & 15;
+  let roar = mem_load(6);
+
+  let sx = iso_screen_x(wx, wy);
+  let sy = iso_screen_y(wx, wy);
+  let leap_z = (if hop < 8 { hop } else { 16 - hop }) / 2 + (if roar > 12 { 3 } else { 0 });
+
+  draw_shadow_ellipse(sx, sy + 3, 14, 7);
+
+  let body_y = sy - 8 - leap_z;
+  let fdx = clamp_vel(vx - vy, 8);
+  let fdy = clamp_vel((vx + vy) / 2, 5);
+  let dir_x = if fdx == 0 && fdy == 0 { 4 } else { (fdx * 3) / 4 };
+  let dir_y = if fdx == 0 && fdy == 0 { -2 } else { fdy / 2 };
+
+  // Hindquarters -> Golden Torso -> Chestnut Mane -> Regal Lion Face
+  draw_shaded_sphere(sx - dir_x / 2, body_y + 1, 8, 224, 158, 46);
+  draw_shaded_sphere(sx, body_y, 9, 238, 174, 52);
+  draw_shaded_sphere(sx + dir_x, body_y - 3 + dir_y, 10, 146, 68, 22);
+  draw_shaded_sphere(sx + dir_x + dir_x / 3, body_y - 3 + dir_y, 6, 245, 186, 66);
+}
+
+export fn render_frame() -[Mem]-> i64 {
+  let tick = mem_load(0);
+  let lx = mem_load(1);
+  let ly = mem_load(2);
+  let stamina = mem_load(5);
+  let roar_timer = mem_load(6);
+  let penned_cnt = mem_load(7);
+
+  let roar_rad = (23 - roar_timer) * 16;
+  let roar_min_sq = (roar_rad - 14) * (roar_rad - 14);
+  let roar_max_sq = (roar_rad + 14) * (roar_rad + 14);
+
+  // 1. Rasterize Sky, Floating 2.5D Isometric Island Cliffs, Grass Checkerboard & Corral Floor
+  let mut sy = 0;
+  while sy < 400 max 400 {
+    let row_off = 32768 + sy * 640;
+    let mut sx = 0;
+    while sx < 640 max 640 {
+      let wx = (sy - 92) * 4 + (sx - 320) * 2;
+      let wy = (sy - 92) * 4 - (sx - 320) * 2;
+
+      if wx >= 0 && wx <= 1024 && wy >= 0 && wy <= 1024 {
+        // Inside isometric savanna meadow!
+        let tile = ((wx >> 6) + (wy >> 6)) & 1;
+        let in_corral = wx >= 700 && wx <= 960 && wy >= 110 && wy <= 370;
+        let on_corral_border = in_corral && (wx <= 708 || wx >= 952 || wy <= 118 || wy >= 362);
+        let in_gate = wx <= 712 && wy >= 165 && wy <= 315;
+
+        let mut r = if tile == 0 { 88 } else { 78 };
+        let mut g = if tile == 0 { 166 } else { 152 };
+        let mut b = if tile == 0 { 74 } else { 64 };
+
+        if in_corral {
+          if on_corral_border && !in_gate {
+            r = 148;
+            g = 102;
+            b = 54;
+          } else {
+            r = if tile == 0 { 196 } else { 184 };
+            g = if tile == 0 { 168 } else { 156 };
+            b = if tile == 0 { 92 } else { 82 };
+          };
+        } else {
+          // Subtle turf border bevel
+          if wx < 18 || wy < 18 || wx > 1006 || wy > 1006 {
+            r = r + 18;
+            g = g + 22;
+            b = b + 12;
+          } else {
+            ()
+          };
+        };
+
+        // Golden Lion Roar ripple across the meadow
+        if roar_timer > 0 {
+          let rdx = wx - lx;
+          let rdy = wy - ly;
+          let rd2 = rdx * rdx + rdy * rdy;
+          if rd2 >= roar_min_sq && rd2 <= roar_max_sq {
+            r = r + 65;
+            g = g + 52;
+            b = b + 10;
+          } else {
+            ()
+          };
+        } else {
+          ()
+        };
+
+        mem_store(row_off + sx, pack_rgba(r, g, b));
+      } else {
+        // Check extruded 3D earthen island cliff faces below wx==1024 and wy==1024!
+        let left_wall = wx > 1024 && wx <= 1100 && (wy - (wx - 1024)) >= 0 && (wy - (wx - 1024)) <= 1024;
+        let right_wall = wy > 1024 && wy <= 1100 && (wx - (wy - 1024)) >= 0 && (wx - (wy - 1024)) <= 1024;
+        if left_wall {
+          let depth = (wx - 1024) >> 2;
+          let lip = if depth < 3 { 1 } else { 0 };
+          let cr = if lip == 1 { 72 } else { 134 - depth * 2 };
+          let cg = if lip == 1 { 138 } else { 92 - depth * 2 };
+          let cb = if lip == 1 { 58 } else { 56 - depth };
+          mem_store(row_off + sx, pack_rgba(cr, cg, cb));
+        } else {
+          if right_wall {
+            let depth = (wy - 1024) >> 2;
+            let lip = if depth < 3 { 1 } else { 0 };
+            let cr = if lip == 1 { 56 } else { 96 - depth * 2 };
+            let cg = if lip == 1 { 112 } else { 66 - depth };
+            let cb = if lip == 1 { 46 } else { 44 - depth };
+            mem_store(row_off + sx, pack_rgba(cr, cg, cb));
+          } else {
+            // Atmospheric twilight-savanna backdrop gradient
+            let sky_r = 20 + (sy * 22) / 400;
+            let sky_g = 30 + (sy * 34) / 400;
+            let sky_b = 48 + (sy * 40) / 400;
+            mem_store(row_off + sx, pack_rgba(sky_r, sky_g, sky_b));
+          };
+        };
+      };
+
+      sx = sx + 1;
+    }
+    sy = sy + 1;
+  }
+
+  // 2. Back Wooden Fence Posts of Shepherd Corral
+  draw_fence_post(700, 110, 16);
+  draw_fence_post(786, 110, 15);
+  draw_fence_post(873, 110, 15);
+  draw_fence_post(960, 110, 16);
+  draw_fence_post(700, 175, 16);
+
+  // 3. Depth-Sort all 15 2.5D Creatures (Painter's Algorithm by wx + wy)
+  let mut k = 0;
+  while k >= 0 && k < 14 max 14 {
+    let saddr = sheep_slot_addr(k);
+    mem_store(256 + k, k);
+    mem_store(272 + k, mem_load(saddr) + mem_load(saddr + 1));
+    k = k + 1;
+  }
+  mem_store(256 + 14, 14);
+  mem_store(272 + 14, lx + ly);
+
+  // Insertion/bubble sort over 15 elements
+  let mut p = 0;
+  while p < 15 max 15 {
+    let mut q = 0;
+    while q < 14 max 14 {
+      let d0 = mem_load(272 + q);
+      let d1 = mem_load(272 + q + 1);
+      if d0 > d1 {
+        let id0 = mem_load(256 + q);
+        let id1 = mem_load(256 + q + 1);
+        mem_store(272 + q, d1);
+        mem_store(272 + q + 1, d0);
+        mem_store(256 + q, id1);
+        mem_store(256 + q + 1, id0);
+      } else {
+        ()
+      };
+      q = q + 1;
+    }
+    p = p + 1;
+  }
+
+  let mut e = 0;
+  while e < 15 max 15 {
+    let ent_id = mem_load(256 + e);
+    if ent_id == 14 {
+      draw_lion_25d();
+    } else {
+      draw_sheep_25d(ent_id);
+    };
+    e = e + 1;
+  }
+
+  // 4. Foreground Corral Fence Posts (overlap creatures near front corral rail!)
+  draw_fence_post(700, 305, 16);
+  draw_fence_post(700, 370, 16);
+  draw_fence_post(786, 370, 15);
+  draw_fence_post(873, 370, 15);
+  draw_fence_post(960, 240, 15);
+  draw_fence_post(960, 370, 16);
+
+  // 5. Crisp Top In-Canvas HUD Bars (Herd Progress + Roar Stamina)
+  let mut hy = 14;
+  while hy < 24 max 12 {
+    let mut hx = 24;
+    while hx < 220 max 200 {
+      let filled = (hx - 24) < (penned_cnt * 196) / 14;
+      let col = if filled {
+        if penned_cnt == 14 { pack_rgba(250, 204, 56) } else { pack_rgba(94, 214, 118) }
+      } else {
+        pack_rgba(38, 52, 68)
+      };
+      mem_store(32768 + hy * 640 + hx, col);
+      hx = hx + 1;
+    }
+    let mut sx_bar = 440;
+    while sx_bar < 616 max 180 {
+      let s_filled = (sx_bar - 440) < (stamina * 176) / 100;
+      let scol = if s_filled { pack_rgba(245, 158, 42) } else { pack_rgba(38, 52, 68) };
+      mem_store(32768 + hy * 640 + sx_bar, scol);
+      sx_bar = sx_bar + 1;
+    }
+    hy = hy + 1;
+  }
+
+  131072 + (tick & 0)
+}
+
+// --- Exported Read-Only Telemetry Getters for Thin Canvas Bridge ---
+
+export fn get_fb_byte_offset() -> i64
+  ens result == 131072
+{
+  131072
+}
+
+export fn get_penned() -[Mem]-> i64 {
+  mem_load(7)
+}
+
+export fn get_score() -[Mem]-> i64 {
+  mem_load(8)
+}
+
+export fn get_stamina() -[Mem]-> i64 {
+  mem_load(5)
+}
+
+export fn get_tick() -[Mem]-> i64 {
+  mem_load(0)
+}
+
+export fn get_snap_count() -[Mem]-> i64 {
+  mem_load(12)
+}
+
+export fn get_win_tick() -[Mem]-> i64 {
+  mem_load(10)
+}
