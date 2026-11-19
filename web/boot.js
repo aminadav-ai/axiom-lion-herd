@@ -1,5 +1,5 @@
-const WIDTH = 640;
-const HEIGHT = 400;
+const WIDTH = 880;
+const HEIGHT = 520;
 
 const canvas = document.getElementById('game-canvas');
 const ctx = canvas.getContext('2d', { alpha: false });
@@ -12,6 +12,7 @@ const winBanner = document.getElementById('win-banner');
 const winDetail = document.getElementById('win-detail');
 const rewindSlider = document.getElementById('rewind-slider');
 const ttStatus = document.getElementById('tt-status');
+const btnSound = document.getElementById('btn-sound');
 const btnRoar = document.getElementById('btn-roar');
 const btnReset = document.getElementById('btn-reset');
 const btnResume = document.getElementById('btn-resume');
@@ -19,9 +20,114 @@ const btnResume = document.getElementById('btn-resume');
 const keys = new Set();
 let roarQueued = 0;
 let ptrActive = 0;
-let ptrSx = 320;
-let ptrSy = 220;
+let ptrSx = 440;
+let ptrSy = 260;
 let scrubbing = false;
+let soundEnabled = true;
+let audioCtx = null;
+
+function ensureAudio() {
+  if (!soundEnabled) return null;
+  if (!audioCtx) {
+    const Ctor = window.AudioContext || window.webkitAudioContext;
+    if (Ctor) audioCtx = new Ctor();
+  }
+  if (audioCtx && audioCtx.state === 'suspended') {
+    audioCtx.resume();
+  }
+  return audioCtx;
+}
+
+function playLionSfx(ev) {
+  if (!ev || !soundEnabled) return;
+  const ac = ensureAudio();
+  if (!ac) return;
+  const now = ac.currentTime;
+
+  if (ev === 1) {
+    // Deep Savanna Lion Roar (sawtooth chest growl + filtered noise breath)
+    const osc = ac.createOscillator();
+    const sub = ac.createOscillator();
+    const filt = ac.createBiquadFilter();
+    const gain = ac.createGain();
+
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(145, now);
+    osc.frequency.exponentialRampToValueAtTime(68, now + 0.36);
+
+    sub.type = 'triangle';
+    sub.frequency.setValueAtTime(72, now);
+    sub.frequency.exponentialRampToValueAtTime(42, now + 0.38);
+
+    filt.type = 'lowpass';
+    filt.frequency.setValueAtTime(680, now);
+    filt.frequency.exponentialRampToValueAtTime(220, now + 0.38);
+
+    gain.gain.setValueAtTime(0.24, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+
+    osc.connect(filt);
+    sub.connect(filt);
+    filt.connect(gain).connect(ac.destination);
+    osc.start(now);
+    sub.start(now);
+    osc.stop(now + 0.42);
+    sub.stop(now + 0.42);
+  } else if (ev === 2) {
+    // Cheerful Sheep "Baa-aa!" Vibrato Bleat + Golden Shepherd Bell!
+    const osc = ac.createOscillator();
+    const vib = ac.createOscillator();
+    const vibGain = ac.createGain();
+    const gain = ac.createGain();
+
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(340, now);
+    osc.frequency.linearRampToValueAtTime(315, now + 0.22);
+
+    vib.frequency.setValueAtTime(26, now);
+    vibGain.gain.setValueAtTime(18, now);
+    vib.connect(vibGain).connect(osc.frequency);
+
+    const filt = ac.createBiquadFilter();
+    filt.type = 'bandpass';
+    filt.frequency.setValueAtTime(950, now);
+    filt.Q.setValueAtTime(2.5, now);
+
+    gain.gain.setValueAtTime(0.16, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.24);
+    osc.connect(filt).connect(gain).connect(ac.destination);
+
+    // Bright brass shepherd collar bell ping
+    const bell = ac.createOscillator();
+    const bellGain = ac.createGain();
+    bell.type = 'sine';
+    bell.frequency.setValueAtTime(1318.5, now + 0.04);
+    bellGain.gain.setValueAtTime(0.11, now + 0.04);
+    bellGain.gain.exponentialRampToValueAtTime(0.001, now + 0.28);
+    bell.connect(bellGain).connect(ac.destination);
+
+    vib.start(now);
+    osc.start(now);
+    bell.start(now + 0.04);
+    vib.stop(now + 0.25);
+    osc.stop(now + 0.25);
+    bell.stop(now + 0.3);
+  } else if (ev === 3) {
+    // Victory Fanfare!
+    [523.25, 659.25, 783.99, 1046.5].forEach((freq, i) => {
+      const osc = ac.createOscillator();
+      const g = ac.createGain();
+      const t = now + i * 0.08;
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(freq, t);
+      g.gain.setValueAtTime(0.16, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+      osc.connect(g).connect(ac.destination);
+      osc.start(t);
+      osc.stop(t + 0.36);
+    });
+  }
+}
 
 function syncSliderVars() {
   const minVal = Number(rewindSlider.min || 0);
@@ -35,6 +141,7 @@ window.addEventListener('keydown', (e) => {
   if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) {
     e.preventDefault();
   }
+  ensureAudio();
   if (e.code === 'Space') {
     roarQueued = 1;
   }
@@ -52,6 +159,7 @@ function updatePointerCoords(e) {
 }
 
 canvas.addEventListener('pointerdown', (e) => {
+  ensureAudio();
   canvas.setPointerCapture(e.pointerId);
   ptrActive = 1;
   updatePointerCoords(e);
@@ -117,12 +225,21 @@ async function boot() {
     syncSliderVars();
   }
 
+  btnSound.addEventListener('click', () => {
+    soundEnabled = !soundEnabled;
+    btnSound.setAttribute('aria-pressed', String(soundEnabled));
+    btnSound.textContent = soundEnabled ? 'Sound: ON' : 'Sound: OFF';
+    if (soundEnabled) ensureAudio();
+  });
+
   btnRoar.addEventListener('click', () => {
+    ensureAudio();
     if (scrubbing) exitScrubMode();
     roarQueued = 1;
   });
 
   btnReset.addEventListener('click', () => {
+    ensureAudio();
     exitScrubMode();
     const seed = (Date.now() & 0x7fffffff) || 424242;
     ex.init_game(seed);
@@ -163,6 +280,8 @@ async function boot() {
                - (keys.has('ArrowUp') || keys.has('KeyW') ? 1 : 0);
       ex.step_game(dx, dy, roarQueued, ptrActive, ptrSx, ptrSy);
       roarQueued = 0;
+      const sfx = ex.pop_sfx();
+      if (sfx > 0) playLionSfx(sfx);
       blitAndSyncHud();
     }
 

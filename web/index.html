@@ -4,24 +4,24 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
-  <title>Axiom Lion Herd — 2.5D Isometric Game in 10.8 KB Pure Axiom.Strata Wasm</title>
+  <title>Axiom Lion Herd HD — 880×520 Sculpted 2.5D Game in 15.0 KB Axiom.Strata Wasm</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <main class="shell">
     <header class="topbar">
       <div>
-        <span class="eyebrow">100% Axiom (Telos + Flux + Strata) • Zero rustc • 90 Z3 Proofs</span>
-        <h1>Axiom Lion Herd <span class="sub">2.5D Isometric Shepherd</span></h1>
+        <span class="eyebrow">100% Axiom (Telos + Flux + Strata) • Zero rustc • HD 880×520</span>
+        <h1>Axiom Lion Herd HD <span class="sub">Sculpted 2.5D Isometric Shepherd</span></h1>
       </div>
       <div class="badges">
-        <span class="badge" id="wasm-size-badge">Wasm: 10.88 KB (4.66 KB gzip)</span>
+        <span class="badge" id="wasm-size-badge">Wasm: 15.03 KB (6.3 KB gzip)</span>
         <a class="badge badge-link" href="https://github.com/aminadav-ai/axiom-lion-herd" target="_blank" rel="noopener noreferrer">Source (.ax)</a>
         <a class="badge badge-link" href="https://github.com/aminadav-ai/axiom-lang" target="_blank" rel="noopener noreferrer">Axiom Compiler</a>
       </div>
     </header>
 
-    <section class="stage-card" aria-label="2.5D Isometric Game Viewport">
+    <section class="stage-card" aria-label="HD 2.5D Isometric Game Viewport">
       <div class="hud-strip">
         <div class="stat">
           <span class="stat-label">Sheep Penned</span>
@@ -40,13 +40,14 @@
           <strong id="stat-fps">60</strong>
         </div>
         <div class="actions">
+          <button type="button" id="btn-sound" class="btn" aria-pressed="true">Sound: ON</button>
           <button type="button" id="btn-roar" class="btn btn-accent">Roar / Sprint (Space)</button>
           <button type="button" id="btn-reset" class="btn">New Flock</button>
         </div>
       </div>
 
       <div class="canvas-wrap">
-        <canvas id="game-canvas" width="640" height="400" aria-label="Isometric meadow with 14 autonomous sheep, wooden shepherd corral, and player lion"></canvas>
+        <canvas id="game-canvas" width="880" height="520" aria-label="HD isometric meadow with 14 sculpted woolly sheep, timber corral with rails, wildflowers, and player lion"></canvas>
         <div id="win-banner" class="win-banner" hidden>
           <strong>All 14 Sheep Penned!</strong>
           <span id="win-detail"></span>
@@ -76,11 +77,11 @@
     <footer class="help-grid">
       <div class="info-card">
         <h2>How to Play</h2>
-        <p>Steer the <strong>Lion</strong> with <kbd>WASD</kbd> / <kbd>Arrow Keys</kbd> — or click/drag directly on the 2.5D meadow. Press <kbd>Space</kbd> to unleash a golden <strong>Lion Roar</strong> that sprints and drives the flock through the open wooden corral gate in the upper-right pasture.</p>
+        <p>Steer the <strong>Regal Lion</strong> with <kbd>WASD</kbd> / <kbd>Arrow Keys</kbd> — or click/drag directly on the 2.5D meadow. Press <kbd>Space</kbd> to unleash a thunderous <strong>Lion Roar</strong> that sprints and drives the flock through the open timber corral gate.</p>
       </div>
       <div class="info-card">
-        <h2>Why Axiom?</h2>
-        <p>Every pixel, 3D sphere normal, ground shadow, Boids flock vector, and Time-Travel ring-buffer snapshot runs inside a <strong>10.88 KB WebAssembly binary</strong> emitted directly by <code>Axiom.Strata</code> with <strong>90 Z3-proven safety obligations</strong> and zero external compiler dependencies.</p>
+        <h2>HD Sculpted 2.5D in <code>15.0 KB</code> of Axiom</h2>
+        <p>Features an <code>880×520</code> anti-aliased <code>isqrt</code> normal-shaded diorama: 6-tuft woolly sheep with floppy ears &amp; 4 trotting legs, a multi-ring maned lion with a whipping tail, connected 3D timber corral rails, wildflowers, Web Audio synthesis, and 240 Time-Travel snapshots.</p>
       </div>
     </footer>
   </main>
