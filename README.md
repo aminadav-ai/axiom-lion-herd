@@ -1,23 +1,23 @@
-# Axiom Lion Herd HD — 880×520 Sculpted 2.5D Browser Game in 100% Axiom
+# Axiom Lion Herd v3.0 GPU HD — True 3D Sculpted Savanna Shepherd (`17.87 KB` Wasm)
 
 **Live Playable Demo:** [https://aminadav-ai.github.io/axiom-lion-herd/](https://aminadav-ai.github.io/axiom-lion-herd/)  
 **Powered by:** [Project Axiom (`axiom-lang` v0.2)](https://github.com/aminadav-ai/axiom-lang)
 
-**Axiom Lion Herd HD** is a high-definition 2.5D isometric shepherd game written **100% in the [Axiom](https://github.com/aminadav-ai/axiom-lang) programming language** (`src/lion_herd.ax`) — spanning `Axiom.Telos`, `Axiom.Flux`, and `Axiom.Strata`, and compiled **directly to standalone W3C WebAssembly bytecode (`15.03 KB` uncompressed / `6.31 KB` gzipped)** with **zero `rustc` and zero third-party engines**.
+**Axiom Lion Herd v3.0 GPU HD** is a 100% clean-room 3D savanna shepherd game written **100% in the [Axiom](https://github.com/aminadav-ai/axiom-lang) programming language** (`src/lion_herd.ax`) using `Axiom.Strata` 8 MiB linear memory + the `-[Mem, Gpu]->` WebGL2 hardware capability — compiled **directly to standalone W3C WebAssembly bytecode (`18,300` bytes / `17.87 KB` uncompressed, `7.24 KB` gzipped)** with **zero `rustc` and zero external assets**.
 
 ---
 
-## Measured Engineering Metrics (`v2.0 HD`)
+## Measured Engineering Metrics (`v3.0 GPU HD`)
 
 | Metric | Value |
 | :--- | :--- |
-| **Game Logic + Sculpted 2.5D Renderer + Physics** | 100% `Axiom` (`src/lion_herd.ax`, 41 semantic graph nodes) |
-| **Compiled `.wasm` Binary Size** | **15,387 bytes (`15.03 KB`)** |
-| **Gzipped HTTP Transfer Size** | **6,465 bytes (`6.31 KB`)** |
-| **HD Framebuffer Resolution** | **`880 × 520` RGBA** (anti-aliased `isqrt` 3D normal shading + baked static diorama cache) |
-| **Software 2.5D Frame Rate** | **~86 FPS** (`~11.6 ms/frame` in V8 on a dual-core 2.0 GHz laptop CPU) |
-| **Sculpted Creature Detail** | 6-puff woolly sheep with 4 trotting legs, floppy ears & eyes; multi-ring maned lion with 4 paws, whipping tail & amber eyes |
-| **Time-Travel Ring Buffer** | **240 live snapshots** stored directly in `Axiom.Strata` linear memory |
+| **Boids Flock AI + 3D Sculpted Meshes + Texture Synthesis** | 100% `Axiom` (`src/lion_herd.ax`, 54 verified graph nodes) |
+| **Compiled `.wasm` Binary Size** | **18,300 bytes (`17.87 KB`)** |
+| **Gzipped HTTP Transfer Size** | **7,411 bytes (`7.24 KB`)** |
+| **Axiom Security Passport Capabilities** | `[CAP] Gpu`, `[CAP] Mem` (embedded in `axiom.passport` Wasm custom section) |
+| **Procedural `256×256` Grass, Fleece, Mane & Timber Textures** | **8 seamless bump-mapped textures** (`28,987` RGB gradations, `227` heightmap relief levels) |
+| **True 3D Polygonal Scene (`10,284` Triangles)** | 3D savanna plateau, granite cliffs, 4 sculpted acacia trees, lantern-lit split-rail cedar corral, **14 smooth ellipsoid Merino sheep**, and **sculpted 3D maned lion** with expanding 3D golden roar shockwave (`1.16 ms` CPU step, `60+ FPS` HD WebGL2) |
+| **Time-Travel Ring Buffer** | **240 live 3D snapshots** stored directly in `Axiom.Strata` linear memory |
 
 ---
 

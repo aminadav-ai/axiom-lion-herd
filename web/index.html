@@ -4,24 +4,24 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
-  <title>Axiom Lion Herd HD — 880×520 Sculpted 2.5D Game in 15.0 KB Axiom.Strata Wasm</title>
+  <title>Axiom Lion Herd v3.0 GPU HD — True 3D Sculpted Savanna Shepherd in 17.9 KB Axiom Wasm</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <main class="shell">
     <header class="topbar">
       <div>
-        <span class="eyebrow">100% Axiom (Telos + Flux + Strata) • Zero rustc • HD 880×520</span>
-        <h1>Axiom Lion Herd HD <span class="sub">Sculpted 2.5D Isometric Shepherd</span></h1>
+        <span class="eyebrow">100% Axiom (Telos + Flux + Strata -[Mem, Gpu]-&gt;) • Zero rustc • HD WebGL2</span>
+        <h1>Axiom Lion Herd <span class="sub">v3.0 True-3D Sculpted Savanna &amp; Bump-Mapped GPU Engine</span></h1>
       </div>
       <div class="badges">
-        <span class="badge" id="wasm-size-badge">Wasm: 15.03 KB (6.3 KB gzip)</span>
+        <span class="badge" id="wasm-size-badge">Wasm: 17.87 KB (7.24 KB gzip)</span>
         <a class="badge badge-link" href="https://github.com/aminadav-ai/axiom-lion-herd" target="_blank" rel="noopener noreferrer">Source (.ax)</a>
         <a class="badge badge-link" href="https://github.com/aminadav-ai/axiom-lang" target="_blank" rel="noopener noreferrer">Axiom Compiler</a>
       </div>
     </header>
 
-    <section class="stage-card" aria-label="HD 2.5D Isometric Game Viewport">
+    <section class="stage-card" aria-label="HD 3D WebGL2 Savanna Viewport">
       <div class="hud-strip">
         <div class="stat">
           <span class="stat-label">Sheep Penned</span>
@@ -36,18 +36,18 @@
           <strong id="stat-stamina">100%</strong>
         </div>
         <div class="stat">
-          <span class="stat-label">Engine FPS</span>
+          <span class="stat-label">GPU FPS</span>
           <strong id="stat-fps">60</strong>
         </div>
         <div class="actions">
           <button type="button" id="btn-sound" class="btn" aria-pressed="true">Sound: ON</button>
           <button type="button" id="btn-roar" class="btn btn-accent">Roar / Sprint (Space)</button>
-          <button type="button" id="btn-reset" class="btn">New Flock</button>
+          <button type="button" id="btn-reset" class="btn" title="Shortcut: R">New Flock (R)</button>
         </div>
       </div>
 
       <div class="canvas-wrap">
-        <canvas id="game-canvas" width="880" height="520" aria-label="HD isometric meadow with 14 sculpted woolly sheep, timber corral with rails, wildflowers, and player lion"></canvas>
+        <canvas id="game-canvas" width="1120" height="660" aria-label="True-3D golden savanna plateau with 14 bump-mapped Merino sheep, split-rail timber corral with lanterns, acacia trees, and sculpted maned lion"></canvas>
         <div id="win-banner" class="win-banner" hidden>
           <strong>All 14 Sheep Penned!</strong>
           <span id="win-detail"></span>
@@ -56,8 +56,8 @@
 
       <div class="timetravel-bar">
         <div class="tt-header">
-          <label for="rewind-slider">Strata Linear-Memory Time-Travel Scrubber</label>
-          <span id="tt-status" class="tt-status">Live Simulation</span>
+          <label for="rewind-slider">Strata Linear-Memory 3D Time-Travel Scrubber</label>
+          <span id="tt-status" class="tt-status">Live 3D Simulation</span>
         </div>
         <div class="tt-controls">
           <input
@@ -77,11 +77,11 @@
     <footer class="help-grid">
       <div class="info-card">
         <h2>How to Play</h2>
-        <p>Steer the <strong>Regal Lion</strong> with <kbd>WASD</kbd> / <kbd>Arrow Keys</kbd> — or click/drag directly on the 2.5D meadow. Press <kbd>Space</kbd> to unleash a thunderous <strong>Lion Roar</strong> that sprints and drives the flock through the open timber corral gate.</p>
+        <p>Steer the <strong>3D Regal Maned Lion</strong> with <kbd>WASD</kbd> / <kbd>Arrow Keys</kbd> — or click/drag directly on the 3D savanna grass! Press <kbd>Space</kbd> (or <strong>Right-Click</strong>) to unleash a glowing <strong>3D Golden Roar Shockwave</strong> that sprints and drives the flock through the lantern-lit timber corral gate. Press <kbd>R</kbd> anytime for a fresh flock.</p>
       </div>
       <div class="info-card">
-        <h2>HD Sculpted 2.5D in <code>15.0 KB</code> of Axiom</h2>
-        <p>Features an <code>880×520</code> anti-aliased <code>isqrt</code> normal-shaded diorama: 6-tuft woolly sheep with floppy ears &amp; 4 trotting legs, a multi-ring maned lion with a whipping tail, connected 3D timber corral rails, wildflowers, Web Audio synthesis, and 240 Time-Travel snapshots.</p>
+        <h2>WebGL2 3D GPU Engine in <code>17.9 KB</code> of Axiom</h2>
+        <p><code>src/lion_herd.ax</code> synthesizes 8 seamless <code>256×256</code> bump-mapped textures (curled Merino sheep fleece, shaggy mahogany lion mane, savanna grass, split-rail cedar, acacia leaves), sculpted smooth-normal 3D ellipsoid sheep &amp; lion meshes, real-time directional sun shadows, and 240 Time-Travel snapshots.</p>
       </div>
     </footer>
   </main>

@@ -62,7 +62,7 @@ body {
 }
 
 .shell {
-  max-inline-size: 980px;
+  max-inline-size: 1080px;
   margin-inline: auto;
   padding: 1.25rem 1rem 2.5rem;
   display: grid;
@@ -198,7 +198,7 @@ h1 .sub {
   display: block;
   inline-size: 100%;
   block-size: auto;
-  aspect-ratio: 880 / 520;
+  aspect-ratio: 56 / 33;
   touch-action: none;
   cursor: crosshair;
 }
