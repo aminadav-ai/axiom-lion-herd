@@ -22,7 +22,18 @@ for (let i = 0; i < u8.length; i += 32) {
 }
 assert(distinctColors.size > 1200, `Expected rich HD 2.5D sculpted diorama (>1200 distinct RGB colors), got ${distinctColors.size}`);
 
-// Benchmark 60 frames of HD 960x560 gameplay + Lion Roar + Boids physics
+// Verify signed negative i32 inputs (`Left` dx=-1 and `Up` dy=-1) move in true opposite directions!
+const mem32 = new Int32Array(ex.memory.buffer);
+ex.init_game(2026);
+const startLx = mem32[1], startLy = mem32[2];
+ex.step_game(-1, 0, 0, 0, 0, 0); // Left
+assert(mem32[1] < startLx && mem32[2] > startLy, 'Left arrow (-1, 0) must move screen-left (-wx, +wy)');
+ex.init_game(2026);
+ex.step_game(0, -1, 0, 0, 0, 0); // Up
+assert(mem32[1] < startLx && mem32[2] < startLy, 'Up arrow (0, -1) must move screen-up (-wx, -wy)');
+ex.init_game(2026);
+
+// Benchmark 60 frames of HD 880x520 gameplay + Lion Roar + Boids physics
 const t0 = performance.now();
 let tickAt20 = -1;
 let staminaAt20 = -1;

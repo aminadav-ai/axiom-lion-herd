@@ -137,19 +137,35 @@ function syncSliderVars() {
   rewindSlider.style.setProperty('--control-value', String(rewindSlider.value));
 }
 
+function normalizeKeyTokens(e) {
+  const tokens = [];
+  if (e.code) tokens.push(e.code);
+  if (e.key) {
+    if (e.key.startsWith('Arrow')) tokens.push(e.key);
+    if (e.key === ' ') tokens.push('Space');
+  }
+  return tokens;
+}
+
 window.addEventListener('keydown', (e) => {
-  if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) {
+  const toks = normalizeKeyTokens(e);
+  if (document.activeElement !== rewindSlider && toks.some((t) => ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(t))) {
     e.preventDefault();
   }
   ensureAudio();
-  if (e.code === 'Space') {
+  if (toks.includes('Space')) {
     roarQueued = 1;
   }
-  keys.add(e.code);
-});
+  toks.forEach((t) => keys.add(t));
+}, { capture: true });
 
 window.addEventListener('keyup', (e) => {
-  keys.delete(e.code);
+  normalizeKeyTokens(e).forEach((t) => keys.delete(t));
+}, { capture: true });
+
+window.addEventListener('blur', () => {
+  keys.clear();
+  ptrActive = 0;
 });
 
 function updatePointerCoords(e) {
@@ -274,10 +290,12 @@ async function boot() {
 
   function frame(now) {
     if (!scrubbing) {
-      const dx = (keys.has('ArrowRight') || keys.has('KeyD') ? 1 : 0)
-               - (keys.has('ArrowLeft') || keys.has('KeyA') ? 1 : 0);
-      const dy = (keys.has('ArrowDown') || keys.has('KeyS') ? 1 : 0)
-               - (keys.has('ArrowUp') || keys.has('KeyW') ? 1 : 0);
+      const right = keys.has('ArrowRight') || keys.has('Numpad6') || keys.has('KeyD') ? 1 : 0;
+      const left = keys.has('ArrowLeft') || keys.has('Numpad4') || keys.has('KeyA') ? 1 : 0;
+      const down = keys.has('ArrowDown') || keys.has('Numpad2') || keys.has('KeyS') ? 1 : 0;
+      const up = keys.has('ArrowUp') || keys.has('Numpad8') || keys.has('KeyW') ? 1 : 0;
+      const dx = right - left;
+      const dy = down - up;
       ex.step_game(dx, dy, roarQueued, ptrActive, ptrSx, ptrSy);
       roarQueued = 0;
       const sfx = ex.pop_sfx();
